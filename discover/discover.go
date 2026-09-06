@@ -90,6 +90,8 @@ func publicKeyRecordFromJWK(key jwk.Key, issuer string, wasCached bool) (*Public
 	return pkr, nil
 }
 
+// DefaultPubkeyFinder constructs a PublicKeyFinder that does no cacheing,
+// simply looking up the JWKS from the provider on every call.
 func DefaultPubkeyFinder() *PublicKeyFinder {
 	return &PublicKeyFinder{
 		JwksFunc: func(ctx context.Context, issuer string) ([]byte, error) {
@@ -98,6 +100,13 @@ func DefaultPubkeyFinder() *PublicKeyFinder {
 	}
 }
 
+// NewPubkeyFinderWithCache constructs a PublicKeyFinder that uses the provided
+// cache to obtain previously-resolved keys without necessarily needing to hit
+// the provider's JWKS endpoint.  The maxAge parameter is the maximum age of
+// a cache entry that will be returned in normal use; if there is no entry
+// within this age available, but the provider cannot be reached to retrieve a
+// new key set, then a previously cached key up to twice this age may still be
+// returned as a fallback.
 func NewPubkeyFinderWithCache(f JwksFetchFunc, cache DiscoveryCache, maxAge time.Duration) *PublicKeyFinder {
 	return &PublicKeyFinder{
 		JwksFunc: f,
