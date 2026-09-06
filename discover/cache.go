@@ -43,10 +43,10 @@ func (n NoOpCache) Write(string, []byte) error {
 // call to Read will return the data that was written, unless the write timestamp
 // is older than the maxAge parameter in which case it will return a ErrCacheMiss error.
 type MapDiscoveryCache struct {
-	// Now is the function that is called to determine the current time.  Normally
+	// now is the function that is called to determine the current time.  Normally
 	// this would be time.Now but you may specify a different function for testing
 	// purposes via NewMapDiscoveryCacheWithClock
-	Now func() time.Time
+	now func() time.Time
 	// cache is the actual mapping from issuer to JWKS content
 	cache map[string][]byte
 	// timestamp records the time each entry was last written
@@ -66,7 +66,7 @@ func NewMapDiscoveryCache() *MapDiscoveryCache {
 // function to retrieve the current time.
 func NewMapDiscoveryCacheWithClock(now func() time.Time) *MapDiscoveryCache {
 	return &MapDiscoveryCache{
-		Now:       now,
+		now:       now,
 		cache:     make(map[string][]byte),
 		timestamp: make(map[string]time.Time),
 		mutex:     &sync.Mutex{},
@@ -77,7 +77,7 @@ func (m *MapDiscoveryCache) Read(_ context.Context, issuer string, maxAge time.D
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	if val, ok := m.cache[issuer]; ok {
-		if stamp, ok := m.timestamp[issuer]; ok && stamp.Add(maxAge).After(m.Now()) {
+		if stamp, ok := m.timestamp[issuer]; ok && stamp.Add(maxAge).After(m.now()) {
 			return val, nil
 		}
 	}
@@ -88,16 +88,16 @@ func (m *MapDiscoveryCache) Write(issuer string, val []byte) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	m.cache[issuer] = val
-	m.timestamp[issuer] = m.Now()
+	m.timestamp[issuer] = m.now()
 	return nil
 }
 
 // Expire deletes all entries from the cache map that were last written more
-// than maxAge time before Now()
+// than maxAge time before now()
 func (m *MapDiscoveryCache) Expire(maxAge time.Duration) int {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	threshold := m.Now().Add(-maxAge)
+	threshold := m.now().Add(-maxAge)
 	var expiredIssuers []string
 	for iss, ts := range m.timestamp {
 		if ts.Before(threshold) {
