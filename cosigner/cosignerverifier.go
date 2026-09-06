@@ -95,6 +95,13 @@ func (v *DefaultCosignerVerifier) VerifyCosigner(ctx context.Context, pkt *pktok
 }
 
 func (v *DefaultCosignerVerifier) tryVerifyCosigner(ctx context.Context, pkt *pktoken.PKToken, header *pktoken.CosignerClaims, mayUseCache bool) (bool, error) {
+	// Check if it's expired
+	if time.Now().After(time.Unix(header.Expiration, 0)) {
+		// return false for wasCached as this is always a hard fail
+		// regardless of whether we may use the cache
+		return false, fmt.Errorf("cosigner signature expired")
+	}
+	// not expired - now try fetching the public key
 	keyRecord, err := v.options.DiscoverPublicKey.ByKeyID(ctx, v.issuer, header.KeyID, mayUseCache)
 	if err != nil {
 		return keyRecord.WasCached, err
@@ -102,10 +109,6 @@ func (v *DefaultCosignerVerifier) tryVerifyCosigner(ctx context.Context, pkt *pk
 	key := keyRecord.PublicKey
 	alg := keyRecord.Alg
 
-	// Check if it's expired
-	if time.Now().After(time.Unix(header.Expiration, 0)) {
-		return keyRecord.WasCached, fmt.Errorf("cosigner signature expired")
-	}
 	if header.Algorithm != alg {
 		return keyRecord.WasCached, fmt.Errorf("key (kid=%s) has alg (%s) which doesn't match alg (%s) in protected", header.KeyID, alg, header.Algorithm)
 	}
