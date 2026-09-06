@@ -761,8 +761,8 @@ func TestZeroMaxAgeDisablesCache(t *testing.T) {
 
 	source := NewMockJwksSource(createMockJwks(t, issuer, []crypto.PublicKey{signer.Public()}, []string{"1234"}, []string{"RS256"}))
 	finder := &PublicKeyFinder{
-		JwksFunc: source.Fetch,
-		Cache:    NewMapDiscoveryCache(),
+		JwksFunc:    source.Fetch,
+		CacheConfig: DiscoveryCacheConfig{Cache: NewMapDiscoveryCache()},
 	}
 
 	for i := range 2 {

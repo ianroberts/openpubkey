@@ -100,10 +100,12 @@ func DefaultPubkeyFinder() *PublicKeyFinder {
 
 func NewPubkeyFinderWithCache(f JwksFetchFunc, cache DiscoveryCache, maxAge time.Duration) *PublicKeyFinder {
 	return &PublicKeyFinder{
-		JwksFunc:       f,
-		Cache:          cache,
-		StandardMaxAge: maxAge,
-		FallbackMaxAge: maxAge * 2,
+		JwksFunc: f,
+		CacheConfig: DiscoveryCacheConfig{
+			Cache:          cache,
+			StandardMaxAge: maxAge,
+			FallbackMaxAge: maxAge * 2,
+		},
 	}
 }
 
@@ -111,10 +113,8 @@ type JwksFetchFunc func(ctx context.Context, issuer string) ([]byte, error)
 
 type PublicKeyFinder struct {
 	util.OutOrErrWriter
-	JwksFunc       JwksFetchFunc
-	Cache          DiscoveryCache
-	StandardMaxAge time.Duration
-	FallbackMaxAge time.Duration
+	JwksFunc    JwksFetchFunc
+	CacheConfig DiscoveryCacheConfig
 }
 
 // GetJwksByIssuer fetches the JWKS from the issuer's JWKS endpoint found at the
@@ -160,10 +160,10 @@ func parseJwks(b []byte) (jwk.Set, error) {
 // older than maxAge. A cache miss, a read error, or an unparseable entry all
 // yield nil — the caller is expected to fall back to a fresh fetch.
 func (f *PublicKeyFinder) readCache(ctx context.Context, issuer string, maxAge time.Duration) jwk.Set {
-	if f.Cache == nil {
+	if f.CacheConfig.Cache == nil {
 		return nil
 	}
-	b, err := f.Cache.Read(ctx, issuer, maxAge)
+	b, err := f.CacheConfig.Cache.Read(ctx, issuer, maxAge)
 	if err != nil {
 		return nil
 	}
@@ -185,8 +185,8 @@ func (f *PublicKeyFinder) fetchFresh(ctx context.Context, issuer string) (jwk.Se
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal fresh JWKS: %w", err)
 	}
-	if f.Cache != nil {
-		if err := f.Cache.Write(issuer, jwksJson); err != nil {
+	if f.CacheConfig.Cache != nil {
+		if err := f.CacheConfig.Cache.Write(issuer, jwksJson); err != nil {
 			_, _ = fmt.Fprintf(f.ErrWriter(), "Failed to write JWKS cache for %s: %v\n", issuer, err)
 		}
 	}
@@ -195,7 +195,7 @@ func (f *PublicKeyFinder) fetchFresh(ctx context.Context, issuer string) (jwk.Se
 
 func (f *PublicKeyFinder) fetchAndParseJwks(ctx context.Context, issuer string, mayUseCache bool) (jwk.Set, bool, error) {
 	if mayUseCache {
-		if jwks := f.readCache(ctx, issuer, f.StandardMaxAge); jwks != nil {
+		if jwks := f.readCache(ctx, issuer, f.CacheConfig.StandardMaxAge); jwks != nil {
 			return jwks, true, nil
 		}
 	}
@@ -209,7 +209,7 @@ func (f *PublicKeyFinder) fetchAndParseJwks(ctx context.Context, issuer string, 
 	// is too old for normal use but still within FallbackMaxAge, unless the
 	// caller explicitly asked to bypass the cache.
 	if mayUseCache {
-		if fallbackJwks := f.readCache(ctx, issuer, f.FallbackMaxAge); fallbackJwks != nil {
+		if fallbackJwks := f.readCache(ctx, issuer, f.CacheConfig.FallbackMaxAge); fallbackJwks != nil {
 			_, _ = fmt.Fprintf(f.ErrWriter(), "Using fallback JWKS from cache for %s: %v\n", issuer, err)
 			return fallbackJwks, true, nil
 		}

@@ -23,6 +23,21 @@ type DiscoveryCache interface {
 	Invalidate(ctx context.Context, issuer string) error
 }
 
+// DiscoveryCacheConfig is a convenient holder for a cache and a pair of
+// "max age" settings, as these will invariably need to be configured
+// all together for any OpenIdProvider
+type DiscoveryCacheConfig struct {
+	// Cache is the discovery cache (if any) used by this provider
+	Cache DiscoveryCache
+	// StandardMaxAge is the standard maximum age of a cache entry before it
+	// is considered expired
+	StandardMaxAge time.Duration
+	// FallbackMaxAge is the absolute maximum age of a cache entry - entries
+	// older than the StandardMaxAge but younger than the FallbackMaxAge may be
+	// used if the provider's JWKS endpoint cannot be reached
+	FallbackMaxAge time.Duration
+}
+
 // ErrCacheMiss is the error returned by DiscoveryCache.Read if no valid entry
 // is found for an issuer within the specified maxAge
 var ErrCacheMiss = errors.New("DiscoveryCache: issuer not found")
