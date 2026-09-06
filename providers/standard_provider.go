@@ -553,12 +553,12 @@ func (s *StandardOp) RefreshTokens(ctx context.Context, refreshToken []byte) (*s
 		AccessToken:  nilIfEmpty(retTokens.AccessToken)}, nil
 }
 
-func (s *StandardOp) PublicKeyByToken(ctx context.Context, token []byte, mayUseCache bool) (*discover.PublicKeyRecord, bool, error) {
-	return s.publicKeyFinder.ByToken(ctx, s.issuer, token, mayUseCache)
+func (s *StandardOp) PublicKeyByToken(ctx context.Context, token []byte) (*discover.PublicKeyRecord, error) {
+	return s.publicKeyFinder.ByToken(ctx, s.issuer, token, true)
 }
 
-func (s *StandardOp) PublicKeyByKeyId(ctx context.Context, keyID string, mayUseCache bool) (*discover.PublicKeyRecord, bool, error) {
-	return s.publicKeyFinder.ByKeyID(ctx, s.issuer, keyID, mayUseCache)
+func (s *StandardOp) PublicKeyByKeyId(ctx context.Context, keyID string) (*discover.PublicKeyRecord, error) {
+	return s.publicKeyFinder.ByKeyID(ctx, s.issuer, keyID, true)
 }
 
 func (s *StandardOp) Issuer() string {

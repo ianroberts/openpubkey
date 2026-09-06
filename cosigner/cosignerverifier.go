@@ -95,26 +95,26 @@ func (v *DefaultCosignerVerifier) VerifyCosigner(ctx context.Context, pkt *pktok
 }
 
 func (v *DefaultCosignerVerifier) tryVerifyCosigner(ctx context.Context, pkt *pktoken.PKToken, header *pktoken.CosignerClaims, mayUseCache bool) (bool, error) {
-	keyRecord, wasCached, err := v.options.DiscoverPublicKey.ByKeyID(ctx, v.issuer, header.KeyID, mayUseCache)
+	keyRecord, err := v.options.DiscoverPublicKey.ByKeyID(ctx, v.issuer, header.KeyID, mayUseCache)
 	if err != nil {
-		return wasCached, err
+		return keyRecord.WasCached, err
 	}
 	key := keyRecord.PublicKey
 	alg := keyRecord.Alg
 
 	// Check if it's expired
 	if time.Now().After(time.Unix(header.Expiration, 0)) {
-		return wasCached, fmt.Errorf("cosigner signature expired")
+		return keyRecord.WasCached, fmt.Errorf("cosigner signature expired")
 	}
 	if header.Algorithm != alg {
-		return wasCached, fmt.Errorf("key (kid=%s) has alg (%s) which doesn't match alg (%s) in protected", header.KeyID, alg, header.Algorithm)
+		return keyRecord.WasCached, fmt.Errorf("key (kid=%s) has alg (%s) which doesn't match alg (%s) in protected", header.KeyID, alg, header.Algorithm)
 	}
 	parsedAlg, err := jwa.KeyAlgorithmFrom(alg)
 	if err != nil {
-		return wasCached, fmt.Errorf("failed to parse key algorithm from %s: %w", alg, err)
+		return keyRecord.WasCached, fmt.Errorf("failed to parse key algorithm from %s: %w", alg, err)
 	}
 	jwsPubkey := jws.WithKey(parsedAlg, key)
 	_, err = jws.Verify(pkt.CosToken, jwsPubkey)
 
-	return wasCached, err
+	return keyRecord.WasCached, err
 }

@@ -81,12 +81,12 @@ func buildTokenURL(rawTokenURL, audience string) (string, error) {
 	return parsedURL.String(), nil
 }
 
-func (g *GithubOp) PublicKeyByToken(ctx context.Context, token []byte, mayUseCache bool) (*discover.PublicKeyRecord, bool, error) {
-	return g.publicKeyFinder.ByToken(ctx, g.issuer, token, mayUseCache)
+func (g *GithubOp) PublicKeyByToken(ctx context.Context, token []byte) (*discover.PublicKeyRecord, error) {
+	return g.publicKeyFinder.ByToken(ctx, g.issuer, token, true)
 }
 
-func (g *GithubOp) PublicKeyByKeyId(ctx context.Context, keyID string, mayUseCache bool) (*discover.PublicKeyRecord, bool, error) {
-	return g.publicKeyFinder.ByKeyID(ctx, g.issuer, keyID, mayUseCache)
+func (g *GithubOp) PublicKeyByKeyId(ctx context.Context, keyID string) (*discover.PublicKeyRecord, error) {
+	return g.publicKeyFinder.ByKeyID(ctx, g.issuer, keyID, true)
 }
 
 func (g *GithubOp) requestTokens(ctx context.Context, cicHash string) (*memguard.LockedBuffer, error) {

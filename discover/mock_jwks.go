@@ -128,6 +128,10 @@ func (m *MockWriteErrorCache) Read(ctx context.Context, issuer string, maxAge ti
 	return m.inner.Read(ctx, issuer, maxAge)
 }
 
+func (m *MockWriteErrorCache) Invalidate(ctx context.Context, issuer string) error {
+	return m.inner.Invalidate(ctx, issuer)
+}
+
 func (m *MockWriteErrorCache) Write(string, []byte) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()

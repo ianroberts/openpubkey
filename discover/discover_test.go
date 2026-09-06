@@ -136,7 +136,7 @@ func TestNewPublicKeyRecord(t *testing.T) {
 			key, err := jwk.ParseKey(keyJsonBytes)
 			require.NoError(t, err, "jwk.ParseKey failed to parse keyJsonBytes")
 
-			gotPublicKeyRecord, err := publicKeyRecordFromJWK(key, commonIssuer)
+			gotPublicKeyRecord, err := publicKeyRecordFromJWK(key, commonIssuer, false)
 
 			if tt.shouldError {
 				require.Error(t, err)
@@ -204,12 +204,12 @@ func TestPublicKeyFinder(t *testing.T) {
 	finder := NewPubkeyFinderWithCache(mockJwks, NewMapDiscoveryCache(), time.Hour)
 
 	for i := range publicKeys {
-		pubkeyRecord, wasCached, err := finder.ByKeyID(ctx, issuer, keyIDs[i], true)
+		pubkeyRecord, err := finder.ByKeyID(ctx, issuer, keyIDs[i], true)
 		require.NoError(t, err)
 		if i == 0 {
-			require.False(t, wasCached, "First call should have fetched fresh JWKS")
+			require.False(t, pubkeyRecord.WasCached, "First call should have fetched fresh JWKS")
 		} else {
-			require.True(t, wasCached, "Second and subsequent calls should use cached JWKS")
+			require.True(t, pubkeyRecord.WasCached, "Second and subsequent calls should use cached JWKS")
 		}
 		require.Equal(t, publicKeys[i], pubkeyRecord.PublicKey)
 		require.Equal(t, algs[i], pubkeyRecord.Alg)
@@ -217,7 +217,7 @@ func TestPublicKeyFinder(t *testing.T) {
 	}
 
 	for i := range publicKeys {
-		pubkeyRecord, _, err := finder.ByToken(ctx, issuer, idTokens[i], true)
+		pubkeyRecord, err := finder.ByToken(ctx, issuer, idTokens[i], true)
 		require.NoError(t, err)
 		require.Equal(t, publicKeys[i], pubkeyRecord.PublicKey)
 		require.Equal(t, algs[i], pubkeyRecord.Alg)
@@ -231,7 +231,7 @@ func TestPublicKeyFinder(t *testing.T) {
 		require.NoError(t, err)
 		jktB64 := util.Base64EncodeForJWT(jkt)
 
-		pubkeyRecord, _, err := finder.ByJKT(ctx, issuer, string(jktB64), true)
+		pubkeyRecord, err := finder.ByJKT(ctx, issuer, string(jktB64), true)
 		require.NoError(t, err)
 		require.Equal(t, publicKeys[i], pubkeyRecord.PublicKey)
 		require.Equal(t, algs[i], pubkeyRecord.Alg)
@@ -239,27 +239,27 @@ func TestPublicKeyFinder(t *testing.T) {
 	}
 
 	// Test failure cases
-	pubkeyRecord, _, err := finder.ByKeyID(ctx, issuer, "not-a-key-id", true)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "not-a-key-id", true)
 	require.Error(t, err)
-	require.Nil(t, pubkeyRecord)
+	require.Nil(t, pubkeyRecord.PublicKey)
 
 	wrongSigner, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	wrongIdToken := CreateIDToken(t, issuer, wrongSigner, "RS256", "not-a-key-id")
-	pubkeyRecord, _, err = finder.ByToken(ctx, issuer, wrongIdToken, true)
+	pubkeyRecord, err = finder.ByToken(ctx, issuer, wrongIdToken, true)
 	require.EqualError(t, err, "no matching public key found for kid not-a-key-id")
-	require.Nil(t, pubkeyRecord)
+	require.Nil(t, pubkeyRecord.PublicKey)
 
 	// Tests we don't return the wrong Public Key even if not kid is supplied
 	wrongIdToken2 := CreateIDToken(t, issuer, wrongSigner, "RS256", "")
-	pubkeyRecord, _, err = finder.ByToken(ctx, issuer, wrongIdToken2, true)
+	pubkeyRecord, err = finder.ByToken(ctx, issuer, wrongIdToken2, true)
 	require.EqualError(t, err, "no matching public key found for kid ")
-	require.Nil(t, pubkeyRecord)
+	require.Nil(t, pubkeyRecord.PublicKey)
 
 	wrongJKT := "not-a-jkt"
-	pubkeyRecord, _, err = finder.ByJKT(ctx, issuer, wrongJKT, true)
+	pubkeyRecord, err = finder.ByJKT(ctx, issuer, wrongJKT, true)
 	require.EqualError(t, err, "no matching public key found for jkt not-a-jkt")
-	require.Nil(t, pubkeyRecord)
+	require.Nil(t, pubkeyRecord.PublicKey)
 }
 
 func TestByTokenWhenOnePublicKey(t *testing.T) {
@@ -286,18 +286,18 @@ func TestByTokenWhenOnePublicKey(t *testing.T) {
 	finder := NewPubkeyFinderWithCache(mockJwks, NewMapDiscoveryCache(), time.Hour)
 
 	for i := range publicKeys {
-		pubkeyRecord, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", true)
+		pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 		require.EqualError(t, err, "no matching public key found for kid 1234", "no kid (keyID) ByKeyID should return nothing")
 		if i == 0 {
-			require.False(t, wasCached, "First call should have fetched fresh JWKS")
+			require.False(t, pubkeyRecord.WasCached, "First call should have fetched fresh JWKS")
 		} else {
-			require.True(t, wasCached, "Second and subsequent calls should use cached JWKS")
+			require.True(t, pubkeyRecord.WasCached, "Second and subsequent calls should use cached JWKS")
 		}
-		require.Nil(t, pubkeyRecord)
+		require.Nil(t, pubkeyRecord.PublicKey)
 	}
 
 	for i := range publicKeys {
-		pubkeyRecord, _, err := finder.ByToken(ctx, issuer, idTokens[i], true)
+		pubkeyRecord, err := finder.ByToken(ctx, issuer, idTokens[i], true)
 		require.NoError(t, err)
 		require.Equal(t, publicKeys[i], pubkeyRecord.PublicKey)
 		require.Equal(t, algs[i], pubkeyRecord.Alg)
@@ -311,7 +311,7 @@ func TestByTokenWhenOnePublicKey(t *testing.T) {
 		require.NoError(t, err)
 		jktB64 := util.Base64EncodeForJWT(jkt)
 
-		pubkeyRecord, _, err := finder.ByJKT(ctx, issuer, string(jktB64), true)
+		pubkeyRecord, err := finder.ByJKT(ctx, issuer, string(jktB64), true)
 		require.NoError(t, err)
 		require.Equal(t, publicKeys[i], pubkeyRecord.PublicKey)
 		require.Equal(t, algs[i], pubkeyRecord.Alg)
@@ -353,12 +353,12 @@ func TestGQTokens(t *testing.T) {
 	finder := NewPubkeyFinderWithCache(mockJwks, NewMapDiscoveryCache(), time.Hour)
 
 	for i := range publicKeys {
-		pubkeyRecord, wasCached, err := finder.ByKeyID(ctx, issuer, keyIDs[i], true)
+		pubkeyRecord, err := finder.ByKeyID(ctx, issuer, keyIDs[i], true)
 		require.NoError(t, err)
 		if i == 0 {
-			require.False(t, wasCached, "First call should have fetched fresh JWKS")
+			require.False(t, pubkeyRecord.WasCached, "First call should have fetched fresh JWKS")
 		} else {
-			require.True(t, wasCached, "Second and subsequent calls should use cached JWKS")
+			require.True(t, pubkeyRecord.WasCached, "Second and subsequent calls should use cached JWKS")
 		}
 		require.Equal(t, publicKeys[i], pubkeyRecord.PublicKey)
 		require.Equal(t, algs[i], pubkeyRecord.Alg)
@@ -366,7 +366,7 @@ func TestGQTokens(t *testing.T) {
 	}
 
 	for i := range publicKeys {
-		pubkeyRecord, _, err := finder.ByToken(ctx, issuer, idTokens[i], true)
+		pubkeyRecord, err := finder.ByToken(ctx, issuer, idTokens[i], true)
 		require.NoError(t, err)
 		require.Equal(t, publicKeys[i], pubkeyRecord.PublicKey)
 		require.Equal(t, algs[i], pubkeyRecord.Alg)
@@ -380,7 +380,7 @@ func TestGQTokens(t *testing.T) {
 		require.NoError(t, err)
 		jktB64 := util.Base64EncodeForJWT(jkt)
 
-		pubkeyRecord, _, err := finder.ByJKT(ctx, issuer, string(jktB64), true)
+		pubkeyRecord, err := finder.ByJKT(ctx, issuer, string(jktB64), true)
 		require.NoError(t, err)
 		require.Equal(t, publicKeys[i], pubkeyRecord.PublicKey)
 		require.Equal(t, algs[i], pubkeyRecord.Alg)
@@ -438,15 +438,15 @@ func TestCacheHitAvoidsProviderFetch(t *testing.T) {
 	source := NewMockJwksSource(createMockJwks(t, issuer, []crypto.PublicKey{signer.Public()}, []string{"1234"}, []string{"RS256"}))
 	finder := NewPubkeyFinderWithCache(source.Fetch, NewMapDiscoveryCache(), time.Hour)
 
-	pubkeyRecord, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
-	require.False(t, wasCached, "First call should have fetched fresh JWKS")
+	require.False(t, pubkeyRecord.WasCached, "First call should have fetched fresh JWKS")
 	require.Equal(t, signer.Public(), pubkeyRecord.PublicKey)
 	require.Equal(t, 1, source.Calls())
 
-	pubkeyRecord, wasCached, err = finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err = finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
-	require.True(t, wasCached, "Second call should use cached JWKS")
+	require.True(t, pubkeyRecord.WasCached, "Second call should use cached JWKS")
 	require.Equal(t, signer.Public(), pubkeyRecord.PublicKey)
 	require.Equal(t, 1, source.Calls(), "Cached call should not reach the provider")
 }
@@ -462,9 +462,9 @@ func TestUncachedLookupAlwaysFetches(t *testing.T) {
 	finder := NewPubkeyFinderWithCache(source.Fetch, NewMapDiscoveryCache(), time.Hour)
 
 	for i := range 3 {
-		pubkeyRecord, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", false)
+		pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", false)
 		require.NoError(t, err)
-		require.False(t, wasCached, "mayUseCache=false should never report a cached key")
+		require.False(t, pubkeyRecord.WasCached, "mayUseCache=false should never report a cached key")
 		require.Equal(t, signer.Public(), pubkeyRecord.PublicKey)
 		require.Equal(t, i+1, source.Calls(), "mayUseCache=false should always reach the provider")
 	}
@@ -481,20 +481,20 @@ func TestCacheEntryExpiresAtStandardMaxAge(t *testing.T) {
 	source := NewMockJwksSource(createMockJwks(t, issuer, []crypto.PublicKey{signer.Public()}, []string{"1234"}, []string{"RS256"}))
 	finder := NewPubkeyFinderWithCache(source.Fetch, NewMapDiscoveryCacheWithClock(clock.Now), time.Hour)
 
-	_, _, err = finder.ByKeyID(ctx, issuer, "1234", true)
+	_, err = finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
 	require.Equal(t, 1, source.Calls())
 
 	clock.Advance(59 * time.Minute)
-	_, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
-	require.True(t, wasCached, "Entry inside StandardMaxAge should still be served from cache")
+	require.True(t, pubkeyRecord.WasCached, "Entry inside StandardMaxAge should still be served from cache")
 	require.Equal(t, 1, source.Calls())
 
 	clock.Advance(2 * time.Minute)
-	_, wasCached, err = finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err = finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
-	require.False(t, wasCached, "Entry past StandardMaxAge should be refetched")
+	require.False(t, pubkeyRecord.WasCached, "Entry past StandardMaxAge should be refetched")
 	require.Equal(t, 2, source.Calls())
 }
 
@@ -511,7 +511,7 @@ func TestFallbackUsedWhenProviderUnreachable(t *testing.T) {
 	// NewPubkeyFinderWithCache sets FallbackMaxAge to twice StandardMaxAge
 	finder := NewPubkeyFinderWithCache(source.Fetch, NewMapDiscoveryCacheWithClock(clock.Now), time.Hour)
 
-	_, _, err = finder.ByKeyID(ctx, issuer, "1234", true)
+	_, err = finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
 
 	// The entry is now too old for a standard read but still inside FallbackMaxAge
@@ -519,9 +519,9 @@ func TestFallbackUsedWhenProviderUnreachable(t *testing.T) {
 	providerErr := errors.New("provider unreachable")
 	source.Fail(providerErr)
 
-	pubkeyRecord, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err, "Stale entry inside FallbackMaxAge should be used when the provider is down")
-	require.True(t, wasCached, "Fallback key came from the cache")
+	require.True(t, pubkeyRecord.WasCached, "Fallback key came from the cache")
 	require.Equal(t, signer.Public(), pubkeyRecord.PublicKey)
 }
 
@@ -536,16 +536,16 @@ func TestFallbackExpiresAtFallbackMaxAge(t *testing.T) {
 	source := NewMockJwksSource(createMockJwks(t, issuer, []crypto.PublicKey{signer.Public()}, []string{"1234"}, []string{"RS256"}))
 	finder := NewPubkeyFinderWithCache(source.Fetch, NewMapDiscoveryCacheWithClock(clock.Now), time.Hour)
 
-	_, _, err = finder.ByKeyID(ctx, issuer, "1234", true)
+	_, err = finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
 
 	clock.Advance(3 * time.Hour)
 	providerErr := errors.New("provider unreachable")
 	source.Fail(providerErr)
 
-	pubkeyRecord, _, err := finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 	require.ErrorIs(t, err, providerErr, "Provider error should surface once the fallback window has closed")
-	require.Nil(t, pubkeyRecord)
+	require.Nil(t, pubkeyRecord.PublicKey)
 }
 
 func TestFallbackNotUsedWhenCacheBypassed(t *testing.T) {
@@ -559,7 +559,7 @@ func TestFallbackNotUsedWhenCacheBypassed(t *testing.T) {
 	source := NewMockJwksSource(createMockJwks(t, issuer, []crypto.PublicKey{signer.Public()}, []string{"1234"}, []string{"RS256"}))
 	finder := NewPubkeyFinderWithCache(source.Fetch, NewMapDiscoveryCacheWithClock(clock.Now), time.Hour)
 
-	_, _, err = finder.ByKeyID(ctx, issuer, "1234", true)
+	_, err = finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
 
 	providerErr := errors.New("provider unreachable")
@@ -568,15 +568,15 @@ func TestFallbackNotUsedWhenCacheBypassed(t *testing.T) {
 	// A caller that asked to bypass the cache should not be handed a cached key,
 	// whether that entry is fresh...
 	clock.Advance(time.Minute)
-	pubkeyRecord, _, err := finder.ByKeyID(ctx, issuer, "1234", false)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", false)
 	require.ErrorIs(t, err, providerErr, "Fresh cache entry should not be served when mayUseCache is false")
-	require.Nil(t, pubkeyRecord)
+	require.Nil(t, pubkeyRecord.PublicKey)
 
 	// ...or stale enough to only be reachable through the fallback read
 	clock.Advance(90 * time.Minute)
-	pubkeyRecord, _, err = finder.ByKeyID(ctx, issuer, "1234", false)
+	pubkeyRecord, err = finder.ByKeyID(ctx, issuer, "1234", false)
 	require.ErrorIs(t, err, providerErr, "Fallback entry should not be served when mayUseCache is false")
-	require.Nil(t, pubkeyRecord)
+	require.Nil(t, pubkeyRecord.PublicKey)
 }
 
 func TestRotatedKeyRecoveredByUncachedLookup(t *testing.T) {
@@ -591,27 +591,27 @@ func TestRotatedKeyRecoveredByUncachedLookup(t *testing.T) {
 	source := NewMockJwksSource(createMockJwks(t, issuer, []crypto.PublicKey{oldSigner.Public()}, []string{"1234"}, []string{"RS256"}))
 	finder := NewPubkeyFinderWithCache(source.Fetch, NewMapDiscoveryCache(), time.Hour)
 
-	_, _, err = finder.ByKeyID(ctx, issuer, "1234", true)
+	_, err = finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
 
 	// The provider rotates the key material behind the same kid
 	source.SetJwks(createMockJwks(t, issuer, []crypto.PublicKey{newSigner.Public()}, []string{"1234"}, []string{"RS256"}))
 
-	pubkeyRecord, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
-	require.True(t, wasCached)
+	require.True(t, pubkeyRecord.WasCached)
 	require.Equal(t, oldSigner.Public(), pubkeyRecord.PublicKey, "Cached lookup still returns the pre-rotation key")
 
 	// This is the retry a verifier performs after failing to verify with a cached key
-	pubkeyRecord, wasCached, err = finder.ByKeyID(ctx, issuer, "1234", false)
+	pubkeyRecord, err = finder.ByKeyID(ctx, issuer, "1234", false)
 	require.NoError(t, err)
-	require.False(t, wasCached)
+	require.False(t, pubkeyRecord.WasCached)
 	require.Equal(t, newSigner.Public(), pubkeyRecord.PublicKey, "Uncached retry should pick up the rotated key")
 
 	// The refetch should also have refreshed the cache
-	pubkeyRecord, wasCached, err = finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err = finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
-	require.True(t, wasCached)
+	require.True(t, pubkeyRecord.WasCached)
 	require.Equal(t, newSigner.Public(), pubkeyRecord.PublicKey)
 }
 
@@ -628,16 +628,16 @@ func TestCorruptCacheEntryIsRefetchedAndOverwritten(t *testing.T) {
 	source := NewMockJwksSource(createMockJwks(t, issuer, []crypto.PublicKey{signer.Public()}, []string{"1234"}, []string{"RS256"}))
 	finder := NewPubkeyFinderWithCache(source.Fetch, cache, time.Hour)
 
-	pubkeyRecord, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err, "Unparseable cache entry should fall through to a fresh fetch")
-	require.False(t, wasCached)
+	require.False(t, pubkeyRecord.WasCached)
 	require.Equal(t, signer.Public(), pubkeyRecord.PublicKey)
 	require.Equal(t, 1, source.Calls())
 
 	// The fresh fetch should have replaced the corrupt entry
-	pubkeyRecord, wasCached, err = finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err = finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
-	require.True(t, wasCached)
+	require.True(t, pubkeyRecord.WasCached)
 	require.Equal(t, signer.Public(), pubkeyRecord.PublicKey)
 	require.Equal(t, 1, source.Calls())
 }
@@ -654,9 +654,9 @@ func TestCorruptCacheEntryDoesNotMaskProviderError(t *testing.T) {
 	source.Fail(providerErr)
 	finder := NewPubkeyFinderWithCache(source.Fetch, cache, time.Hour)
 
-	pubkeyRecord, _, err := finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 	require.ErrorIs(t, err, providerErr, "A corrupt fallback entry should not hide why the provider fetch failed")
-	require.Nil(t, pubkeyRecord)
+	require.Nil(t, pubkeyRecord.PublicKey)
 }
 
 func TestUnparseableFreshJwksFallsBackToCache(t *testing.T) {
@@ -670,16 +670,16 @@ func TestUnparseableFreshJwksFallsBackToCache(t *testing.T) {
 	source := NewMockJwksSource(createMockJwks(t, issuer, []crypto.PublicKey{signer.Public()}, []string{"1234"}, []string{"RS256"}))
 	finder := NewPubkeyFinderWithCache(source.Fetch, NewMapDiscoveryCacheWithClock(clock.Now), time.Hour)
 
-	_, _, err = finder.ByKeyID(ctx, issuer, "1234", true)
+	_, err = finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
 
 	// The provider is reachable but serving something that isn't a JWKS
 	clock.Advance(90 * time.Minute)
 	source.SetJwks([]byte("<html>502 Bad Gateway</html>"))
 
-	pubkeyRecord, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 	require.NoError(t, err)
-	require.True(t, wasCached)
+	require.True(t, pubkeyRecord.WasCached)
 	require.Equal(t, signer.Public(), pubkeyRecord.PublicKey)
 }
 
@@ -690,9 +690,9 @@ func TestUnparseableFreshJwksWithoutCacheEntry(t *testing.T) {
 	source := NewMockJwksSource([]byte("<html>502 Bad Gateway</html>"))
 	finder := NewPubkeyFinderWithCache(source.Fetch, NewMapDiscoveryCache(), time.Hour)
 
-	pubkeyRecord, _, err := finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 	require.ErrorContains(t, err, "unmarshal")
-	require.Nil(t, pubkeyRecord)
+	require.Nil(t, pubkeyRecord.PublicKey)
 }
 
 func TestFinderWithoutCache(t *testing.T) {
@@ -710,9 +710,9 @@ func TestFinderWithoutCache(t *testing.T) {
 	}
 
 	for _, mayUseCache := range []bool{true, false} {
-		pubkeyRecord, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", mayUseCache)
+		pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", mayUseCache)
 		require.NoError(t, err, "A finder with no cache should not fail or panic")
-		require.False(t, wasCached)
+		require.False(t, pubkeyRecord.WasCached)
 		require.Equal(t, signer.Public(), pubkeyRecord.PublicKey)
 	}
 	require.Equal(t, 2, source.Calls(), "A finder with no cache fetches on every lookup")
@@ -720,9 +720,9 @@ func TestFinderWithoutCache(t *testing.T) {
 	// The fallback path must not touch the nil cache either
 	providerErr := errors.New("provider unreachable")
 	source.Fail(providerErr)
-	pubkeyRecord, _, err := finder.ByKeyID(ctx, issuer, "1234", true)
+	pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 	require.ErrorIs(t, err, providerErr)
-	require.Nil(t, pubkeyRecord)
+	require.Nil(t, pubkeyRecord.PublicKey)
 }
 
 func TestFinderWithNoOpCache(t *testing.T) {
@@ -742,9 +742,9 @@ func TestFinderWithNoOpCache(t *testing.T) {
 	finder := NewPubkeyFinderWithCache(source.Fetch, cache, time.Hour)
 
 	for i := range 3 {
-		_, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", true)
+		pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 		require.NoError(t, err)
-		require.False(t, wasCached)
+		require.False(t, pubkeyRecord.WasCached)
 		require.Equal(t, i+1, source.Calls(), "NoOpCache should never satisfy a lookup")
 	}
 }
@@ -766,9 +766,9 @@ func TestZeroMaxAgeDisablesCache(t *testing.T) {
 	}
 
 	for i := range 2 {
-		_, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", true)
+		pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 		require.NoError(t, err)
-		require.False(t, wasCached)
+		require.False(t, pubkeyRecord.WasCached)
 		require.Equal(t, i+1, source.Calls())
 	}
 }
@@ -785,9 +785,9 @@ func TestCacheWriteFailureIsNotFatal(t *testing.T) {
 	finder := NewPubkeyFinderWithCache(source.Fetch, cache, time.Hour)
 
 	for i := range 2 {
-		pubkeyRecord, wasCached, err := finder.ByKeyID(ctx, issuer, "1234", true)
+		pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 		require.NoError(t, err, "A failing cache write should not fail the lookup")
-		require.False(t, wasCached)
+		require.False(t, pubkeyRecord.WasCached)
 		require.Equal(t, signer.Public(), pubkeyRecord.PublicKey)
 		require.Equal(t, i+1, source.Calls(), "With no successful writes every lookup refetches")
 	}
@@ -908,7 +908,7 @@ func TestConcurrentLookups(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			pubkeyRecord, _, err := finder.ByKeyID(ctx, issuer, "1234", true)
+			pubkeyRecord, err := finder.ByKeyID(ctx, issuer, "1234", true)
 			if err != nil {
 				errs <- err
 				return

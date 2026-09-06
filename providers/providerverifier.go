@@ -179,24 +179,24 @@ func (v *DefaultProviderVerifier) VerifyIDToken(ctx context.Context, idToken []b
 // freshly retrieved from the provider (false), and the error (if any) that occurred
 // during verification.
 func (v *DefaultProviderVerifier) verifyIDTokenSig(ctx context.Context, idToken []byte, alg jwa.SignatureAlgorithm, mayUseCache bool) (bool, error) {
-	pubKeyRecord, wasCached, err := v.providerPublicKey(ctx, idToken, mayUseCache)
+	pubKeyRecord, err := v.providerPublicKey(ctx, idToken, mayUseCache)
 	if err != nil {
-		return wasCached, fmt.Errorf("failed to get OP public key: %w", err)
+		return pubKeyRecord.WasCached, fmt.Errorf("failed to get OP public key: %w", err)
 	}
 
 	// Validate that key type matches the algorithm in the token
 	switch alg {
 	case jwa.RS256(), jwa.PS256():
 		if _, ok := pubKeyRecord.PublicKey.(*rsa.PublicKey); !ok {
-			return wasCached, fmt.Errorf("algorithm %s requires RSA key, got %T", alg, pubKeyRecord.PublicKey)
+			return pubKeyRecord.WasCached, fmt.Errorf("algorithm %s requires RSA key, got %T", alg, pubKeyRecord.PublicKey)
 		}
 	case jwa.ES256():
 		if _, ok := pubKeyRecord.PublicKey.(*ecdsa.PublicKey); !ok {
-			return wasCached, fmt.Errorf("algorithm %s requires ECDSA key, got %T", alg, pubKeyRecord.PublicKey)
+			return pubKeyRecord.WasCached, fmt.Errorf("algorithm %s requires ECDSA key, got %T", alg, pubKeyRecord.PublicKey)
 		}
 	case jwa.EdDSA():
 		if _, ok := pubKeyRecord.PublicKey.(ed25519.PublicKey); !ok {
-			return wasCached, fmt.Errorf("algorithm %s requires Ed25519 key, got %T", alg, pubKeyRecord.PublicKey)
+			return pubKeyRecord.WasCached, fmt.Errorf("algorithm %s requires Ed25519 key, got %T", alg, pubKeyRecord.PublicKey)
 		}
 	default:
 		// we always return wasCached as false here, since an unsupported algorithm is always a hard fail
@@ -205,14 +205,14 @@ func (v *DefaultProviderVerifier) verifyIDTokenSig(ctx context.Context, idToken 
 
 	// jws.Verify handles all algorithms generically
 	if _, err := jws.Verify(idToken, jws.WithKey(alg, pubKeyRecord.PublicKey)); err != nil {
-		return wasCached, fmt.Errorf("signature verification failed: %w", err)
+		return pubKeyRecord.WasCached, fmt.Errorf("signature verification failed: %w", err)
 	}
-	return wasCached, nil
+	return pubKeyRecord.WasCached, nil
 }
 
 // This function takes in an OIDC Provider created ID token or GQ-signed modification of one and returns
 // the associated public key
-func (v *DefaultProviderVerifier) providerPublicKey(ctx context.Context, idToken []byte, mayUseCache bool) (*discover.PublicKeyRecord, bool, error) {
+func (v *DefaultProviderVerifier) providerPublicKey(ctx context.Context, idToken []byte, mayUseCache bool) (*discover.PublicKeyRecord, error) {
 	return v.options.DiscoverPublicKey.ByToken(ctx, v.Issuer(), idToken, mayUseCache)
 }
 
@@ -378,23 +378,23 @@ func (v *DefaultProviderVerifier) verifyGQSig(ctx context.Context, idt *oidc.Jwt
 }
 
 func (v *DefaultProviderVerifier) verifyGQSigAgainstIssuer(ctx context.Context, idt *oidc.Jwt, mayUseCache bool) (bool, error) {
-	publicKeyRecord, wasCached, err := v.options.DiscoverPublicKey.ByToken(ctx, v.Issuer(), idt.GetRaw(), mayUseCache)
+	publicKeyRecord, err := v.options.DiscoverPublicKey.ByToken(ctx, v.Issuer(), idt.GetRaw(), mayUseCache)
 	if err != nil {
-		return wasCached, fmt.Errorf("failed to get provider public key: %w", err)
+		return publicKeyRecord.WasCached, fmt.Errorf("failed to get provider public key: %w", err)
 	}
 
 	rsaKey, ok := publicKeyRecord.PublicKey.(*rsa.PublicKey)
 	if !ok {
-		return wasCached, fmt.Errorf("jwk is not an RSA key")
+		return publicKeyRecord.WasCached, fmt.Errorf("jwk is not an RSA key")
 	}
 	ok, err = gq.GQ256VerifyJWT(rsaKey, idt.GetRaw())
 	if err != nil {
-		return wasCached, err
+		return publicKeyRecord.WasCached, err
 	}
 	if !ok {
-		return wasCached, fmt.Errorf("error verifying OP GQ signature on PK Token (ID Token invalid)")
+		return publicKeyRecord.WasCached, fmt.Errorf("error verifying OP GQ signature on PK Token (ID Token invalid)")
 	}
-	return wasCached, nil
+	return publicKeyRecord.WasCached, nil
 }
 
 func originalTokenHeaders(token []byte) (jws.Headers, error) {

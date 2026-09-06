@@ -60,7 +60,7 @@ func TestSimpleBackendOverride(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, idt)
 
-	record, _, err := mockBackend.GetPublicKeyFinder().ByToken(context.Background(), issuer, idt, false)
+	record, err := mockBackend.GetPublicKeyFinder().ByToken(context.Background(), issuer, idt, false)
 	require.NoError(t, err)
 
 	keyAlg, err := jwa.KeyAlgorithmFrom(record.Alg)

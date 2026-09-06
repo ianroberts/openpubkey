@@ -19,6 +19,8 @@ type DiscoveryCache interface {
 	Read(ctx context.Context, issuer string, maxAge time.Duration) ([]byte, error)
 	// Write saves the given value in the cache for the given issuer
 	Write(issuer string, value []byte) error
+	// Invalidate removes all entries from the cache for the given issuer
+	Invalidate(ctx context.Context, issuer string) error
 }
 
 // ErrCacheMiss is the error returned by DiscoveryCache.Read if no valid entry
@@ -34,6 +36,10 @@ func (n NoOpCache) Read(context.Context, string, time.Duration) ([]byte, error) 
 }
 
 func (n NoOpCache) Write(string, []byte) error {
+	return nil
+}
+
+func (n NoOpCache) Invalidate(context.Context, string) error {
 	return nil
 }
 
@@ -53,7 +59,7 @@ type MapDiscoveryCache struct {
 	timestamp map[string]time.Time
 	// mutex is used to avoid interference between read/write operations and calls
 	// to Expire
-	mutex *sync.Mutex
+	mutex sync.RWMutex
 }
 
 // NewMapDiscoveryCache creates a default empty cache that uses time.Now as its
@@ -69,13 +75,13 @@ func NewMapDiscoveryCacheWithClock(now func() time.Time) *MapDiscoveryCache {
 		now:       now,
 		cache:     make(map[string][]byte),
 		timestamp: make(map[string]time.Time),
-		mutex:     &sync.Mutex{},
+		mutex:     sync.RWMutex{},
 	}
 }
 
 func (m *MapDiscoveryCache) Read(_ context.Context, issuer string, maxAge time.Duration) ([]byte, error) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
 	if val, ok := m.cache[issuer]; ok {
 		if stamp, ok := m.timestamp[issuer]; ok && stamp.Add(maxAge).After(m.now()) {
 			return val, nil
@@ -89,6 +95,14 @@ func (m *MapDiscoveryCache) Write(issuer string, val []byte) error {
 	defer m.mutex.Unlock()
 	m.cache[issuer] = val
 	m.timestamp[issuer] = m.now()
+	return nil
+}
+
+func (m *MapDiscoveryCache) Invalidate(_ context.Context, issuer string) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	delete(m.cache, issuer)
+	delete(m.timestamp, issuer)
 	return nil
 }
 
